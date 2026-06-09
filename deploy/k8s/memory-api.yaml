@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-api
+  namespace: agent-memory
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memory-api
+  template:
+    metadata:
+      labels:
+        app: memory-api
+    spec:
+      containers:
+        - name: memory-api
+          image: registry.theramirez.casa/agent-memory:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: memory-api-secret
+                  key: MONGO_URI
+            - name: MONGO_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: memory-api-secret
+                  key: MONGO_DATABASE
+            - name: MEMORY_TOKENS
+              valueFrom:
+                secretKeyRef:
+                  name: memory-api-secret
+                  key: MEMORY_TOKENS
+          readinessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v1/healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: memory-api
+  namespace: agent-memory
+spec:
+  selector:
+    app: memory-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

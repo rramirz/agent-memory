@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  namespace: agent-memory
+spec:
+  selector:
+    app: mongodb
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: 27017
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: agent-memory
+spec:
+  serviceName: mongodb
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+        - name: mongodb
+          image: mongo:4.4
+          ports:
+            - containerPort: 27017
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+          readinessProbe:
+            tcpSocket:
+              port: 27017
+            initialDelaySeconds: 10
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: ssd
+        resources:
+          requests:
+            storage: 10Gi

@@ -1,0 +1,3 @@
+bin/
+docs/ai/*.md
+.agent-memory.yaml

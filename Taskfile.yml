@@ -1,0 +1,66 @@
+version: '3'
+
+tasks:
+  dev:
+    desc: Run API server locally (requires MONGO_URI and MEMORY_TOKENS)
+    cmds:
+      - go run ./cmd/api
+
+  build:
+    desc: Build API binary
+    cmds:
+      - go build -o bin/api ./cmd/api
+
+  build:cli:
+    desc: Build memory CLI binary
+    cmds:
+      - go build -o bin/memory ./cmd/memory
+
+  install:cli:
+    desc: Install memory CLI to GOPATH/bin
+    cmds:
+      - go install ./cmd/memory
+
+  tidy:
+    desc: Tidy and download Go modules
+    cmds:
+      - go mod tidy
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test ./...
+
+  docker:build:
+    desc: Build Docker image
+    cmds:
+      - docker build -f deploy/Dockerfile -t ghcr.io/rramirz/agent-memory:latest .
+
+  docker:push:
+    desc: Push Docker image
+    cmds:
+      - docker push ghcr.io/rramirz/agent-memory:latest
+
+  k8s:apply:
+    desc: Apply all k8s manifests
+    cmds:
+      - kubectl apply -f deploy/k8s/namespace.yaml
+      - kubectl apply -f deploy/k8s/secret.yaml
+      - kubectl apply -f deploy/k8s/mongodb.yaml
+      - kubectl apply -f deploy/k8s/memory-api.yaml
+      - kubectl apply -f deploy/k8s/ingress.yaml
+
+  k8s:status:
+    desc: Check agent-memory namespace status
+    cmds:
+      - kubectl get all -n agent-memory
+
+  k8s:logs:
+    desc: Tail memory-api logs
+    cmds:
+      - kubectl logs -n agent-memory -l app=memory-api -f
+
+  k8s:delete:
+    desc: Delete all agent-memory resources
+    cmds:
+      - kubectl delete namespace agent-memory
