@@ -1,6 +1,23 @@
 version: '3'
 
 tasks:
+
+  update:
+    desc: Update local memory CLI and OpenCode MCP plugin from GitHub
+    cmds:
+      - go install github.com/rramirz/agent-memory/cmd/memory@latest
+      - npm install -g github:rramirz/opencode-agent-memory
+
+  update:cli:
+    desc: Update local memory CLI from GitHub
+    cmds:
+      - go install github.com/rramirz/agent-memory/cmd/memory@latest
+
+  update:plugin:
+    desc: Update OpenCode agent-memory MCP plugin and bundled skills
+    cmds:
+      - npm install -g github:rramirz/opencode-agent-memory
+
   dev:
     desc: Run API server locally (requires MONGO_URI and MEMORY_TOKENS)
     cmds:
