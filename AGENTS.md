@@ -51,7 +51,7 @@ Three isolated orgs: `arrive`, `logicbroker`, `personal`. Every memory, every qu
 
 `org = "core"` is a reserved cross-org namespace for foundational agent "personality" (preferences, conventions, rules) that every workstation shares. Readable by any recognized token; writable only by a token granted `core` (`MEMORY_TOKENS` line `<token>:personal,core`). Never put org secrets or machine-specific paths in core.
 
-- Write path: the local `/reflect` OpenCode skill (`~/.config/opencode/skill/reflect/SKILL.md`) mines recent sessions and writes universal signals via `save_memory core=true`. Cursor: `~/.config/opencode/state/reflect-cursor.json`.
+- Write path: the local `/reflect` OpenCode skill (`~/.config/opencode/skill/reflect/SKILL.md`) mines recent sessions and proposes universal signals, writes approved memories via `save_memory core=true`, and records progress with `reflection-marker` session summaries in the core namespace.
 - Read path: `GET /v1/context` always emits `docs/ai/core.md` from `org=core` (any requested org), so `memory sync` / `sync_memory` pull it everywhere.
 - MCP: `save_memory` / `search_memory` accept `core: true` to target the namespace.
 - Go seams: `models.OrgCore` + `models.IsWritableOrg` (create), `Authorizer.CanReadOrg` + `Authorizer.Recognized` (core readable by any known token), `db.GetCoreMemories`, `contextgen` core.md. `core` is NOT in `models.ValidOrgs`.
