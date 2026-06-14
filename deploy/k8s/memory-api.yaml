@@ -34,6 +34,12 @@ spec:
                 secretKeyRef:
                   name: memory-api-secret
                   key: MEMORY_TOKENS
+            - name: ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: memory-api-secret
+                  key: ADMIN_TOKEN
+                  optional: true
           readinessProbe:
             httpGet:
               path: /v1/healthz

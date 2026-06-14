@@ -1,0 +1,24 @@
+<tr class="token-row">
+    <td>{{ .Name }}</td>
+    <td>
+        {{ range .Orgs }}
+        <span class="badge">{{ . }}</span>
+        {{ end }}
+    </td>
+    <td class="mono">{{ .CreatedAt.Format "2006-01-02 15:04" }}</td>
+    <td>
+        {{ if .RevokedAt }}
+        <span class="badge revoked">Revoked: {{ .RevokedAt.Format "2006-01-02" }}</span>
+        {{ else }}
+        <span class="badge active">Active</span>
+        {{ end }}
+    </td>
+    <td>
+        {{ if not .RevokedAt }}
+        <button class="danger-btn ghost-btn" 
+                style="color: var(--danger); text-align: center; border: 1px solid var(--danger); padding: 0.2rem 0.5rem;" 
+                hx-post="/ui/tokens/{{ .ID.Hex }}/revoke" 
+                hx-confirm="Are you sure you want to revoke this token?">Revoke</button>
+        {{ end }}
+    </td>
+</tr>

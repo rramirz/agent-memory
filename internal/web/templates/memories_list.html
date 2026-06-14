@@ -1,0 +1,22 @@
+<table>
+    <thead>
+        <tr>
+            <th>Title & Tags</th>
+            <th>Type</th>
+            <th>Context (Proj/Repo)</th>
+            <th>From</th>
+            <th>Imp</th>
+            <th>Updated</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody hx-target="closest tr" hx-swap="outerHTML">
+        {{ range .Memories }}
+            {{ template "memory_row.html" map "Memory" . }}
+        {{ else }}
+        <tr>
+            <td colspan="7">No memories found.</td>
+        </tr>
+        {{ end }}
+    </tbody>
+</table>

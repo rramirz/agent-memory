@@ -13,14 +13,14 @@ import (
 
 type ContextHandlers struct {
 	db        *db.DB
-	tokens    *auth.TokenStore
+	auth      *auth.Authorizer
 	generator *contextgen.Generator
 }
 
-func NewContextHandlers(database *db.DB, tokens *auth.TokenStore) *ContextHandlers {
+func NewContextHandlers(database *db.DB, authorizer *auth.Authorizer) *ContextHandlers {
 	return &ContextHandlers{
 		db:        database,
-		tokens:    tokens,
+		auth:      authorizer,
 		generator: contextgen.New(database),
 	}
 }
@@ -37,7 +37,7 @@ func (h *ContextHandlers) GetContext(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "org is required")
 		return
 	}
-	if !h.tokens.CanAccessOrg(token, org) {
+	if !h.auth.CanAccessOrg(r.Context(), token, org) {
 		writeError(w, http.StatusForbidden, "token not authorized for this org")
 		return
 	}

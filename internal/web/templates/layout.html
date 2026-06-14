@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Memory Console</title>
+    <link rel="stylesheet" href="/ui/static/style.css">
+    <script src="/ui/static/htmx.min.js"></script>
+</head>
+<body hx-boost="true">
+    {{ if .Auth }}
+    <nav class="sidebar">
+        <div class="logo">AM.Console</div>
+        <a href="/ui/memories" class="{{ if eq .Active "memories" }}active{{ end }}">Memories</a>
+        <a href="/ui/tokens" class="{{ if eq .Active "tokens" }}active{{ end }}">Tokens</a>
+        <div class="spacer"></div>
+        <form method="POST" action="/ui/logout" hx-boost="false">
+            <button type="submit" class="ghost-btn">Logout</button>
+        </form>
+    </nav>
+    {{ end }}
+    <main class="content">
+        {{ template "content" . }}
+    </main>
+</body>
+</html>

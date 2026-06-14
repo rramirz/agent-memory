@@ -1,8 +1,14 @@
 package auth
 
 import (
+	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"net/http"
 	"strings"
+
+	"github.com/rramirz/agent-memory/internal/models"
 )
 
 // TokenStore maps bearer tokens to the orgs they are allowed to access.
@@ -53,4 +59,61 @@ func (ts *TokenStore) CanAccessOrg(token, org string) bool {
 func BearerToken(r *http.Request) string {
 	h := r.Header.Get("Authorization")
 	return strings.TrimPrefix(h, "Bearer ")
+}
+
+// TokenFinder looks up an active (non-revoked) DB token by its SHA-256 hex hash.
+type TokenFinder interface {
+	FindTokenByHash(ctx context.Context, hash string) (*models.Token, error)
+}
+
+// Authorizer resolves bearer tokens in order: admin token, env tokens, DB tokens.
+type Authorizer struct {
+	env        *TokenStore
+	finder     TokenFinder
+	adminToken string
+}
+
+func NewAuthorizer(env *TokenStore, finder TokenFinder, adminToken string) *Authorizer {
+	return &Authorizer{env: env, finder: finder, adminToken: adminToken}
+}
+
+func (a *Authorizer) AdminEnabled() bool {
+	return a.adminToken != ""
+}
+
+func (a *Authorizer) IsAdmin(token string) bool {
+	if a.adminToken == "" || token == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(token), []byte(a.adminToken)) == 1
+}
+
+func (a *Authorizer) CanAccessOrg(ctx context.Context, token, org string) bool {
+	if token == "" {
+		return false
+	}
+	if a.IsAdmin(token) {
+		return true
+	}
+	if a.env != nil && a.env.CanAccessOrg(token, org) {
+		return true
+	}
+	if a.finder == nil {
+		return false
+	}
+	t, err := a.finder.FindTokenByHash(ctx, HashToken(token))
+	if err != nil || t == nil {
+		return false
+	}
+	for _, o := range t.Orgs {
+		if o == org {
+			return true
+		}
+	}
+	return false
+}
+
+func HashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }

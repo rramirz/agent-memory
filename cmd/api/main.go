@@ -14,6 +14,7 @@ import (
 	"github.com/rramirz/agent-memory/internal/config"
 	"github.com/rramirz/agent-memory/internal/db"
 	"github.com/rramirz/agent-memory/internal/handlers"
+	"github.com/rramirz/agent-memory/internal/web"
 )
 
 func main() {
@@ -51,14 +52,24 @@ func main() {
 		log.Warn("ensure indexes", "error", err)
 	}
 
-	memH := handlers.NewMemoryHandlers(database, tokens)
-	ctxH := handlers.NewContextHandlers(database, tokens)
+	authz := auth.NewAuthorizer(tokens, database, cfg.AdminToken)
+
+	memH := handlers.NewMemoryHandlers(database, authz)
+	ctxH := handlers.NewContextHandlers(database, authz)
+	admH := handlers.NewAdminHandlers(database, authz)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/healthz", handlers.Health)
 	mux.HandleFunc("POST /v1/memories", memH.CreateMemory)
 	mux.HandleFunc("GET /v1/memories/search", memH.SearchMemories)
+	mux.HandleFunc("PATCH /v1/memories/{id}", memH.UpdateMemory)
+	mux.HandleFunc("DELETE /v1/memories/{id}", memH.DeleteMemory)
 	mux.HandleFunc("GET /v1/context", ctxH.GetContext)
+	mux.HandleFunc("POST /v1/admin/tokens", admH.CreateToken)
+	mux.HandleFunc("GET /v1/admin/tokens", admH.ListTokens)
+	mux.HandleFunc("DELETE /v1/admin/tokens/{id}", admH.RevokeToken)
+
+	web.Setup(mux, database, authz)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Port),

@@ -14,6 +14,7 @@ type APIConfig struct {
 	MongoURI      string
 	MongoDatabase string
 	Tokens        string
+	AdminToken    string
 }
 
 func LoadAPIConfig() (APIConfig, error) {
@@ -22,6 +23,7 @@ func LoadAPIConfig() (APIConfig, error) {
 		MongoURI:      getEnv("MONGO_URI", "mongodb://localhost:27017"),
 		MongoDatabase: getEnv("MONGO_DATABASE", "agent_memory"),
 		Tokens:        os.Getenv("MEMORY_TOKENS"),
+		AdminToken:    os.Getenv("ADMIN_TOKEN"),
 	}
 	if cfg.Tokens == "" {
 		return cfg, fmt.Errorf("MEMORY_TOKENS env var required")

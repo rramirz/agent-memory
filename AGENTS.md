@@ -2,7 +2,7 @@
 
 ## What this is
 
-Go API + CLI for centralized agent memory. Stores memories in MongoDB. Generates context markdown files for OpenCode agents.
+Go API + CLI for centralized agent memory. Stores memories in MongoDB. Generates context markdown files for OpenCode agents. Embedded admin web UI at `/ui` (added June 11 2026) for managing memories + API tokens.
 
 Full system explanation: `ARCHITECTURE.md` (components, data model, auth, flows, deploy, failure modes). Keep it updated when architecture changes.
 
@@ -14,18 +14,26 @@ Full system explanation: `ARCHITECTURE.md` (components, data model, auth, flows,
 ## Architecture
 
 ```
-cmd/api/     → HTTP server (port 8080)
+cmd/api/     → HTTP server (port 8080): /v1 API + /ui admin console
 cmd/memory/  → CLI (save/search/sync/flush/status)
 internal/
-  auth/       bearer token store, org scoping
+  auth/       Authorizer: admin token → env tokens → DB tokens (SHA-256 lookup)
   config/     API env config + workstation/repo YAML config
-  db/         MongoDB connection, indexes, CRUD
+  db/         MongoDB connection, indexes, CRUD (memories + tokens collections)
   contextgen/ generates docs/ai/*.md from memories
-  handlers/   HTTP handlers (health, memories, context)
-  models/     Memory struct + request/response types
+  handlers/   HTTP handlers (health, memories, context, admin tokens)
+  models/     Memory + Token structs, request/response types
   outbox/     local fail-safe write queue (~/.agent-memory/outbox/)
+  web/        embedded HTMX admin UI (templates + static via embed.FS)
 deploy/k8s/  namespace, secret, mongodb StatefulSet, memory-api Deployment, HTTPRoute
 ```
+
+## Web UI + admin token
+
+- `/ui` on the same binary: login with `ADMIN_TOKEN` (HttpOnly cookie), memories browse/search/edit/soft-delete per org, token create/revoke.
+- `ADMIN_TOKEN` env from `memory-api-secret` (key optional in Deployment manifest). Unset = admin API 503 + UI disabled.
+- Admin token on home-mac: `~/.agent-memory/admin-token` (chmod 600); source of truth is the k8s secret.
+- Admin endpoints: `POST/GET /v1/admin/tokens`, `DELETE /v1/admin/tokens/{id}`. Memory edit: `PATCH/DELETE /v1/memories/{id}` (soft delete, org immutable).
 
 ## Cluster deployment
 
@@ -45,7 +53,10 @@ Three isolated orgs: `arrive`, `logicbroker`, `personal`. Every memory, every qu
 
 ## Machine access management
 
-No machine registry, no UI. Machine access = one bearer token per machine, mapped via comments in the secret:
+Two paths since June 11 2026:
+
+1. **Web UI / admin API (preferred)**: create + revoke DB-backed tokens at `https://memory.theramirez.casa/ui` → Tokens. Hashed in Mongo, plaintext shown once, instant revoke, no restart.
+2. **Env tokens (legacy, still active)**: one bearer token per machine in the secret, mapped via comments:
 
 ```
 # home-mac

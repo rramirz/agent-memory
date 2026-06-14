@@ -1,0 +1,11 @@
+<tr class="token-row new-token">
+    <td colspan="5" style="background: rgba(115, 218, 202, 0.1); border: 1px solid var(--success);">
+        <div class="alert success" style="margin: 0;">
+            <strong style="color: var(--success);">Token created successfully!</strong>
+            <p>Save this token now. It will not be shown again.</p>
+            <pre>{{ .Plaintext }}</pre>
+            <button onclick="this.closest('tr').remove()" class="ghost-btn" style="width: auto; margin-top: 1rem; border: 1px solid var(--border);">Dismiss</button>
+        </div>
+    </td>
+</tr>
+{{ template "token_row.html" .Token }}

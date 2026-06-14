@@ -1,0 +1,17 @@
+{{ template "layout.html" . }}
+{{ define "content" }}
+<div class="login-box">
+    <h1>AM.Console</h1>
+    <p>Authenticate to manage memories and tokens.</p>
+    {{ if .Error }}
+    <div class="alert error">{{ .Error }}</div>
+    {{ end }}
+    <form method="POST" action="/ui/login" hx-boost="false">
+        <div class="form-group">
+            <label for="token">Admin Token</label>
+            <input type="password" id="token" name="token" required autofocus>
+        </div>
+        <button type="submit" class="primary-btn">Authenticate</button>
+    </form>
+</div>
+{{ end }}

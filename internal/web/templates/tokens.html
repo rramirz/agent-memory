@@ -1,0 +1,45 @@
+{{ template "layout.html" . }}
+{{ define "content" }}
+<div class="flex-row">
+    <h1>Tokens</h1>
+</div>
+
+<div style="background: var(--surface); padding: 1rem; border-radius: 4px; border: 1px solid var(--border); margin-bottom: 2rem;">
+    <h3 style="margin-top: 0; color: var(--accent);">Create New Token</h3>
+    <form hx-post="/ui/tokens" hx-target="#tokens-tbody" hx-swap="afterbegin" hx-on::after-request="if(event.detail.successful) this.reset()">
+        <input type="text" name="name" placeholder="Token Name (e.g. mbp-work)" required>
+        
+        <div style="margin-bottom: 1rem;">
+            <label>Allowed Workstations:</label>
+            {{ range .Orgs }}
+            <label style="display: inline-block; margin-right: 1rem; font-weight: normal;">
+                <input type="checkbox" name="orgs" value="{{ . }}" style="width: auto;"> {{ . }}
+            </label>
+            {{ end }}
+        </div>
+
+        <button type="submit" class="primary-btn">Create Token</button>
+    </form>
+</div>
+
+<table id="tokens-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Workstations</th>
+            <th>Created At</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody id="tokens-tbody" hx-get="/ui/tokens/list" hx-trigger="token-revoked from:body">
+        {{ range .Tokens }}
+            {{ template "token_row.html" . }}
+        {{ else }}
+        <tr>
+            <td colspan="5">No tokens found.</td>
+        </tr>
+        {{ end }}
+    </tbody>
+</table>
+{{ end }}

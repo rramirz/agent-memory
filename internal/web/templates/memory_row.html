@@ -1,0 +1,40 @@
+<tr class="memory-row">
+    <td>
+        <details>
+            <summary><strong>{{ .Memory.Title }}</strong></summary>
+            <pre>{{ .Memory.Body }}</pre>
+        </details>
+        <div style="margin-top: 0.5rem;">
+            {{ range .Memory.Tags }}
+            <span class="badge mono">#{{ . }}</span>
+            {{ end }}
+        </div>
+    </td>
+    <td><span class="badge">{{ .Memory.Type }}</span></td>
+    <td class="mono">
+        {{ if or .Memory.Project .Memory.Repo }}
+            {{ .Memory.Project }}{{ if .Memory.Repo }}/{{ .Memory.Repo }}{{ end }}
+        {{ else }}
+            -
+        {{ end }}
+    </td>
+    <td class="mono">
+        {{ if .Memory.Workstation }}{{ .Memory.Workstation }}{{ else }}-{{ end }}
+        {{ if .Memory.Source }}<span class="badge">{{ .Memory.Source }}</span>{{ end }}
+    </td>
+    <td>{{ .Memory.Importance }}</td>
+    <td class="mono">{{ .Memory.UpdatedAt.Format "Jan 02, 15:04" }}</td>
+    <td>
+        <div style="display: flex; gap: 0.5rem;">
+            <button class="ghost-btn" style="border: 1px solid var(--border); width: auto; padding: 0.2rem 0.5rem; text-align: center;" 
+                    hx-get="/ui/memories/{{ .Memory.ID.Hex }}/edit" 
+                    hx-target="closest tr" 
+                    hx-swap="outerHTML">Edit</button>
+            <button class="danger-btn ghost-btn" style="border: 1px solid var(--danger); color: var(--danger); width: auto; padding: 0.2rem 0.5rem; text-align: center;" 
+                    hx-post="/ui/memories/{{ .Memory.ID.Hex }}/delete" 
+                    hx-confirm="Are you sure you want to delete this memory?" 
+                    hx-target="closest tr" 
+                    hx-swap="outerHTML">Delete</button>
+        </div>
+    </td>
+</tr>

@@ -1,0 +1,31 @@
+{{ template "layout.html" . }}
+{{ define "content" }}
+<div class="flex-row">
+    <h1>Memories</h1>
+</div>
+
+<form id="search-form" class="filters" hx-get="/ui/memories/list" hx-target="#memories-list" hx-trigger="change, submit, keyup delay:200ms from:input[name='q']">
+    <select name="org">
+        {{ $currentOrg := .Org }}
+        {{ range .Orgs }}
+        <option value="{{ . }}" {{ if eq . $currentOrg }}selected{{ end }}>Workstation: {{ . }}</option>
+        {{ end }}
+    </select>
+
+    <input type="text" name="q" placeholder="Search..." autocomplete="off">
+    
+    <select name="type">
+        <option value="">All Types</option>
+        {{ range .Types }}
+        <option value="{{ . }}">{{ . }}</option>
+        {{ end }}
+    </select>
+
+    <input type="text" name="project" placeholder="Project">
+    <input type="text" name="repo" placeholder="Repo">
+</form>
+
+<div id="memories-list" hx-get="/ui/memories/list?org={{ .Org }}" hx-trigger="load">
+    Loading...
+</div>
+{{ end }}

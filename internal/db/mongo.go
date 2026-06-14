@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -57,6 +58,13 @@ func (d *DB) EnsureIndexes(ctx context.Context) error {
 	}
 	if _, err := coll.Indexes().CreateOne(ctx, textIdx); err != nil {
 		return fmt.Errorf("create text index: %w", err)
+	}
+	tokenIdx := mongo.IndexModel{
+		Keys:    bson.D{{Key: "token_hash", Value: 1}},
+		Options: options.Index().SetUnique(true),
+	}
+	if _, err := d.tokensCol().Indexes().CreateOne(ctx, tokenIdx); err != nil {
+		return fmt.Errorf("create token hash index: %w", err)
 	}
 	return nil
 }
@@ -121,6 +129,39 @@ func (d *DB) SearchMemories(ctx context.Context, p SearchParams) ([]models.Memor
 		return nil, fmt.Errorf("decode memories: %w", err)
 	}
 	return results, nil
+}
+
+func (d *DB) GetMemoryByID(ctx context.Context, id primitive.ObjectID) (*models.Memory, error) {
+	var m models.Memory
+	err := d.col().FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&m)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get memory by id: %w", err)
+	}
+	return &m, nil
+}
+
+func (d *DB) UpdateMemory(ctx context.Context, id primitive.ObjectID, set bson.D) error {
+	set = append(set, bson.E{Key: "updated_at", Value: time.Now().UTC()})
+	update := bson.D{{Key: "$set", Value: set}}
+	if _, err := d.col().UpdateOne(ctx, bson.D{{Key: "_id", Value: id}}, update); err != nil {
+		return fmt.Errorf("update memory: %w", err)
+	}
+	return nil
+}
+
+func (d *DB) SoftDeleteMemory(ctx context.Context, id primitive.ObjectID) error {
+	set := bson.D{
+		{Key: "status", Value: models.StatusDeleted},
+		{Key: "updated_at", Value: time.Now().UTC()},
+	}
+	update := bson.D{{Key: "$set", Value: set}}
+	if _, err := d.col().UpdateOne(ctx, bson.D{{Key: "_id", Value: id}}, update); err != nil {
+		return fmt.Errorf("soft delete memory: %w", err)
+	}
+	return nil
 }
 
 func (d *DB) GetMemoriesByType(ctx context.Context, org, project, repo, memType string, limit int) ([]models.Memory, error) {

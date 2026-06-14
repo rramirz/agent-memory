@@ -24,7 +24,18 @@ workstation (home-mac / arrive-laptop / logicbroker-laptop)
 
 ## Data model
 
-One collection: memories. Each document:
+Two collections: `memories` and `tokens`.
+
+`tokens` (DB-backed bearer tokens, managed via admin API / web UI):
+
+| Field | Notes |
+|---|---|
+| `name` | machine/app label |
+| `token_hash` | hex SHA-256 of plaintext token — plaintext never stored, shown once at creation |
+| `orgs` | orgs this token may access |
+| `created_at`, `revoked_at` | revoked = `revoked_at` set; revoked tokens fail auth |
+
+`memories` documents:
 
 | Field | Notes |
 |---|---|
@@ -48,13 +59,31 @@ Plain `net/http` mux, port 8080, JSON logging via slog, graceful shutdown on SIG
 | `GET /v1/healthz` | liveness, no auth |
 | `POST /v1/memories` | create memory (201) |
 | `GET /v1/memories/search` | filter by `org` (required) + `q`/`project`/`repo`/`type`/`tag`/`limit` (max 100) |
+| `PATCH /v1/memories/{id}` | partial update (title/body/tags/importance/type/project/repo/scope/status); org immutable |
+| `DELETE /v1/memories/{id}` | soft delete (sets `status=deleted`) |
 | `GET /v1/context` | returns generated markdown files for org/project/repo |
+| `POST /v1/admin/tokens` | admin only — create DB token, returns plaintext once |
+| `GET /v1/admin/tokens` | admin only — list tokens (no hashes/secrets) |
+| `DELETE /v1/admin/tokens/{id}` | admin only — revoke (sets `revoked_at`) |
 
 ## Auth (internal/auth)
 
+Bearer resolution order in `Authorizer`: admin token → env tokens → DB tokens.
+
+- `ADMIN_TOKEN` env (optional). Constant-time compare. Grants `/v1/admin/*`, the `/ui` web console, and all-org access on memory endpoints. Unset = admin endpoints 503, UI shows "admin disabled".
 - `MEMORY_TOKENS` env from k8s secret. One line per token: `token:org1,org2`. `#` lines are comments — used to label which machine owns each token.
-- Request flow: extract `Authorization: Bearer <token>` → look up token's orgs → reject 401 (no token) / 403 (token not scoped to requested org).
-- One token per machine. Revoke machine = delete its line + rollout restart. No machine registry, no sessions, no users.
+- DB tokens: incoming bearer is SHA-256 hashed and looked up in the `tokens` collection (`revoked_at` must be unset). Created/revoked via admin API or web UI — no rollout restart needed.
+- Request flow: extract `Authorization: Bearer <token>` → resolve orgs → reject 401 (no token) / 403 (token not scoped to requested org).
+- Env path: one token per machine; revoke = delete its line + rollout restart. DB path: revoke instantly via UI.
+
+## Web UI (internal/web)
+
+Server-rendered admin console at `/ui`, embedded in the same binary (html/template + vendored HTMX via embed.FS, no CDN, no build step).
+
+- Login: POST `/ui/login` with the admin token → HttpOnly cookie (`am_admin_token`, Path=/ui, SameSite=Lax, Secure behind TLS/X-Forwarded-Proto).
+- Memories page: org switcher (org always scopes every query), text search, type/project/repo filters, HTMX partial swaps, inline edit (org immutable) and soft delete with confirm.
+- Tokens page: list with active/revoked badges, create (name + org checkboxes) showing plaintext exactly once, revoke with confirm.
+- UI handlers call `internal/db` directly; same validation as the API handlers.
 
 ## Context generation (internal/contextgen)
 
@@ -86,7 +115,7 @@ Config resolution: workstation `~/.agent-memory/config.yaml` (api_url, default_o
 - MongoDB: `mongo:4.4` (Proxmox VMs lack AVX; Mongo 5+ requires it), tcpSocket readiness probe, `ssd` StorageClass
 - memory-api: image `ghcr.io/rramirz/agent-memory:latest`, built `--platform linux/amd64` (Mac is ARM, nodes amd64)
 - Ingress: kgateway HTTPRoute `memory.theramirez.casa` → Service `memory-api:80` → pod 8080
-- Secret `memory-api-secret`: `MONGO_URI`, `MONGO_DATABASE`, `MEMORY_TOKENS` — never committed with real values
+- Secret `memory-api-secret`: `MONGO_URI`, `MONGO_DATABASE`, `MEMORY_TOKENS`, `ADMIN_TOKEN` (optional key) — never committed with real values
 
 ## Failure modes
 
@@ -95,6 +124,6 @@ Config resolution: workstation `~/.agent-memory/config.yaml` (api_url, default_o
 - Bad token → 401/403, nothing written
 - Org mismatch in outbox replay → entry skipped, kept on disk
 
-## Deliberate non-goals (v1)
+## Deliberate non-goals
 
-No web UI, no vector search, no auto-injection, no machine registry, no token self-service. Memory writes are explicit (manual CLI/MCP calls).
+No vector search, no auto-injection, no multi-user accounts (single admin token for the UI). Memory writes are explicit (manual CLI/MCP calls or admin UI).

@@ -11,15 +11,24 @@ import (
 	"github.com/rramirz/agent-memory/internal/auth"
 	"github.com/rramirz/agent-memory/internal/db"
 	"github.com/rramirz/agent-memory/internal/models"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-type MemoryHandlers struct {
-	db     *db.DB
-	tokens *auth.TokenStore
+var validStatuses = map[string]bool{
+	models.StatusActive:     true,
+	models.StatusSuperseded: true,
+	models.StatusArchived:   true,
+	models.StatusDeleted:    true,
 }
 
-func NewMemoryHandlers(database *db.DB, tokens *auth.TokenStore) *MemoryHandlers {
-	return &MemoryHandlers{db: database, tokens: tokens}
+type MemoryHandlers struct {
+	db   *db.DB
+	auth *auth.Authorizer
+}
+
+func NewMemoryHandlers(database *db.DB, authorizer *auth.Authorizer) *MemoryHandlers {
+	return &MemoryHandlers{db: database, auth: authorizer}
 }
 
 func (h *MemoryHandlers) CreateMemory(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +59,7 @@ func (h *MemoryHandlers) CreateMemory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid org: %s", req.Org))
 		return
 	}
-	if !h.tokens.CanAccessOrg(token, req.Org) {
+	if !h.auth.CanAccessOrg(r.Context(), token, req.Org) {
 		writeError(w, http.StatusForbidden, "token not authorized for this org")
 		return
 	}
@@ -105,7 +114,7 @@ func (h *MemoryHandlers) SearchMemories(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "org is required")
 		return
 	}
-	if !h.tokens.CanAccessOrg(token, org) {
+	if !h.auth.CanAccessOrg(r.Context(), token, org) {
 		writeError(w, http.StatusForbidden, "token not authorized for this org")
 		return
 	}
@@ -142,5 +151,135 @@ func (h *MemoryHandlers) SearchMemories(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, models.SearchMemoriesResponse{
 		Memories: memories,
 		Total:    len(memories),
+	})
+}
+
+func (h *MemoryHandlers) loadAuthorizedMemory(w http.ResponseWriter, r *http.Request) (*models.Memory, bool) {
+	token := auth.BearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "missing authorization token")
+		return nil, false
+	}
+
+	id, err := primitive.ObjectIDFromHex(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid memory id")
+		return nil, false
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	m, err := h.db.GetMemoryByID(ctx, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load memory")
+		return nil, false
+	}
+	if m == nil || m.Status == models.StatusDeleted {
+		writeError(w, http.StatusNotFound, "memory not found")
+		return nil, false
+	}
+	if !h.auth.CanAccessOrg(r.Context(), token, m.Org) {
+		writeError(w, http.StatusForbidden, "token not authorized for this org")
+		return nil, false
+	}
+	return m, true
+}
+
+func (h *MemoryHandlers) UpdateMemory(w http.ResponseWriter, r *http.Request) {
+	m, ok := h.loadAuthorizedMemory(w, r)
+	if !ok {
+		return
+	}
+
+	var req models.UpdateMemoryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	set := bson.D{}
+	if req.Title != nil {
+		if *req.Title == "" {
+			writeError(w, http.StatusBadRequest, "title cannot be empty")
+			return
+		}
+		set = append(set, bson.E{Key: "title", Value: *req.Title})
+	}
+	if req.Body != nil {
+		if *req.Body == "" {
+			writeError(w, http.StatusBadRequest, "body cannot be empty")
+			return
+		}
+		set = append(set, bson.E{Key: "body", Value: *req.Body})
+	}
+	if req.Tags != nil {
+		set = append(set, bson.E{Key: "tags", Value: *req.Tags})
+	}
+	if req.Importance != nil {
+		if *req.Importance < 1 || *req.Importance > 10 {
+			writeError(w, http.StatusBadRequest, "importance must be between 1 and 10")
+			return
+		}
+		set = append(set, bson.E{Key: "importance", Value: *req.Importance})
+	}
+	if req.Type != nil {
+		set = append(set, bson.E{Key: "type", Value: *req.Type})
+	}
+	if req.Project != nil {
+		set = append(set, bson.E{Key: "project", Value: *req.Project})
+	}
+	if req.Repo != nil {
+		set = append(set, bson.E{Key: "repo", Value: *req.Repo})
+	}
+	if req.Scope != nil {
+		set = append(set, bson.E{Key: "scope", Value: *req.Scope})
+	}
+	if req.Status != nil {
+		if !validStatuses[*req.Status] {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid status: %s", *req.Status))
+			return
+		}
+		set = append(set, bson.E{Key: "status", Value: *req.Status})
+	}
+	if len(set) == 0 {
+		writeError(w, http.StatusBadRequest, "no fields to update")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	if err := h.db.UpdateMemory(ctx, m.ID, set); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update memory")
+		return
+	}
+
+	updated, err := h.db.GetMemoryByID(ctx, m.ID)
+	if err != nil || updated == nil {
+		writeError(w, http.StatusInternalServerError, "failed to load updated memory")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (h *MemoryHandlers) DeleteMemory(w http.ResponseWriter, r *http.Request) {
+	m, ok := h.loadAuthorizedMemory(w, r)
+	if !ok {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	if err := h.db.SoftDeleteMemory(ctx, m.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete memory")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"id":     m.ID.Hex(),
+		"status": "deleted",
 	})
 }
