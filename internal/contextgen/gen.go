@@ -50,6 +50,12 @@ var contextFiles = []fileSpec{
 		types: []string{models.TypeKnownIssue},
 		limit: 30,
 	},
+	{
+		path:  "docs/ai/ideas.md",
+		title: "Ideas & Building Blocks",
+		types: []string{models.TypeIdea, models.TypeSkill, models.TypeAgent, models.TypePromptPattern},
+		limit: 50,
+	},
 }
 
 func (g *Generator) Generate(ctx context.Context, org, project, repo string) ([]models.ContextFile, error) {

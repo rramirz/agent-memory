@@ -43,7 +43,7 @@ Two collections: `memories` and `tokens`.
 | `project`, `repo` | grouping within org |
 | `workstation` | which machine wrote it — metadata only, NOT auth |
 | `scope` | usually `repo` |
-| `type` | `decision`, `session_summary`, `architecture`, `runbook`, `known_issue`, `task`, `preference`, `note` |
+| `type` | `decision`, `session_summary`, `architecture`, `runbook`, `known_issue`, `task`, `preference`, `note`, `idea`, `skill`, `agent`, `prompt_pattern` (free-form string, not enforced server-side) |
 | `title`, `body` | the memory itself |
 | `tags` | repeatable strings |
 | `importance` | 1-10 |
@@ -87,7 +87,7 @@ Server-rendered admin console at `/ui`, embedded in the same binary (html/templa
 
 ## Context generation (internal/contextgen)
 
-`GET /v1/context` builds four markdown files from memories, grouped by type:
+`GET /v1/context` builds five markdown files from memories, grouped by type:
 
 | File | Types | Limit |
 |---|---|---|
@@ -95,6 +95,7 @@ Server-rendered admin console at `/ui`, embedded in the same binary (html/templa
 | `docs/ai/decisions.md` | decision | 50 |
 | `docs/ai/architecture.md` | architecture, runbook | 30 |
 | `docs/ai/known-issues.md` | known_issue | 30 |
+| `docs/ai/ideas.md` | idea, skill, agent, prompt_pattern | 50 |
 
 `memory sync` fetches these and writes them into the repo so agents can read context locally without network calls.
 

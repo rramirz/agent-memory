@@ -26,6 +26,10 @@ const (
 	TypeTask           = "task"
 	TypePreference     = "preference"
 	TypeNote           = "note"
+	TypeIdea           = "idea"
+	TypeSkill          = "skill"
+	TypeAgent          = "agent"
+	TypePromptPattern  = "prompt_pattern"
 
 	SourceManual  = "manual"
 	SourceSession = "session"

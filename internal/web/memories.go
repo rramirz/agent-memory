@@ -28,6 +28,7 @@ func (h *UIHandlers) handleMemoriesGet(w http.ResponseWriter, r *http.Request) {
 		models.TypeDecision, models.TypeSessionSummary, models.TypeArchitecture,
 		models.TypeRunbook, models.TypeKnownIssue, models.TypeTask,
 		models.TypePreference, models.TypeNote,
+		models.TypeIdea, models.TypeSkill, models.TypeAgent, models.TypePromptPattern,
 	}
 
 	h.render(w, "memories.html", map[string]interface{}{

@@ -130,7 +130,7 @@ func newAddCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&memType, "type", "note", "type (decision|session_summary|architecture|runbook|known_issue|task|preference|note)")
+	cmd.Flags().StringVar(&memType, "type", "note", "type (decision|session_summary|architecture|runbook|known_issue|task|preference|note|idea|skill|agent|prompt_pattern)")
 	cmd.Flags().StringVar(&title, "title", "", "title")
 	cmd.Flags().StringVar(&body, "body", "", "body")
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "tag (repeatable)")
