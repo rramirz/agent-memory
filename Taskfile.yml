@@ -32,14 +32,14 @@ tasks:
       - go test ./...
 
   docker:build:
-    desc: Build Docker image
+    desc: Build Docker image (requires amd64 for cluster)
     cmds:
-      - docker build -f deploy/Dockerfile -t ghcr.io/rramirz/agent-memory:latest .
+      - docker buildx build --platform linux/amd64 -f deploy/Dockerfile -t registry.theramirez.casa/agent-memory:latest .
 
   docker:push:
     desc: Push Docker image
     cmds:
-      - docker push ghcr.io/rramirz/agent-memory:latest
+      - docker push registry.theramirez.casa/agent-memory:latest
 
   k8s:apply:
     desc: Apply all k8s manifests

@@ -68,6 +68,20 @@ memory sync
 memory flush
 ```
 
+## Bulk import local memory markdown
+
+`memory import` parses local OpenCode memory files (`notes.md`, `dreams/core.md`, `dreams/local.md`) into individual memories and loads them into the service. Records are tagged with the current **workstation**; org defaults to the workstation's `default_org` (no per-record org classification). `source` is set to `import`.
+
+```bash
+memory import --dry-run                       # preview parsed memories, write nothing
+memory import                                 # load from ~/.config/opencode/context
+memory import --dir /path/to/context          # custom base dir
+memory import --file notes.md --file core.md  # explicit files
+memory import --org logicbroker               # override org (must be allowed by workstation)
+```
+
+Granularity: one memory per H3 subsection, per bold-led top-level bullet, or per whole section otherwise. The `Mined Session IDs` section is skipped by default (`--skip`). Re-running is additive (no dedup); delete prior imports via `/ui` or by `source=import`.
+
 ## Tokens
 
 Two kinds of bearer tokens:

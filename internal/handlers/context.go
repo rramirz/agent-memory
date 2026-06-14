@@ -37,7 +37,7 @@ func (h *ContextHandlers) GetContext(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "org is required")
 		return
 	}
-	if !h.auth.CanAccessOrg(r.Context(), token, org) {
+	if !h.auth.CanReadOrg(r.Context(), token, org) {
 		writeError(w, http.StatusForbidden, "token not authorized for this org")
 		return
 	}

@@ -55,6 +55,12 @@ func (ts *TokenStore) CanAccessOrg(token, org string) bool {
 	return false
 }
 
+// Orgs returns the orgs a token may access and whether the token is known.
+func (ts *TokenStore) Orgs(token string) ([]string, bool) {
+	orgs, ok := ts.tokens[token]
+	return orgs, ok
+}
+
 // BearerToken extracts the token from an Authorization: Bearer <token> header.
 func BearerToken(r *http.Request) string {
 	h := r.Header.Get("Authorization")
@@ -111,6 +117,37 @@ func (a *Authorizer) CanAccessOrg(ctx context.Context, token, org string) bool {
 		}
 	}
 	return false
+}
+
+// Recognized reports whether the token resolves to any known principal
+// (admin, an env token, or a non-revoked DB token), regardless of org.
+func (a *Authorizer) Recognized(ctx context.Context, token string) bool {
+	if token == "" {
+		return false
+	}
+	if a.IsAdmin(token) {
+		return true
+	}
+	if a.env != nil {
+		if _, ok := a.env.Orgs(token); ok {
+			return true
+		}
+	}
+	if a.finder != nil {
+		if t, err := a.finder.FindTokenByHash(ctx, HashToken(token)); err == nil && t != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// CanReadOrg gates reads: the shared core namespace is readable by any
+// recognized token, all other orgs require an explicit grant.
+func (a *Authorizer) CanReadOrg(ctx context.Context, token, org string) bool {
+	if org == models.OrgCore {
+		return a.Recognized(ctx, token)
+	}
+	return a.CanAccessOrg(ctx, token, org)
 }
 
 func HashToken(token string) string {

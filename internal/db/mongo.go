@@ -193,3 +193,27 @@ func (d *DB) GetMemoriesByType(ctx context.Context, org, project, repo, memType 
 	}
 	return results, nil
 }
+
+// GetCoreMemories returns active memories in the shared core namespace,
+// across all projects/repos, highest importance first.
+func (d *DB) GetCoreMemories(ctx context.Context, limit int) ([]models.Memory, error) {
+	filter := bson.D{
+		{Key: "org", Value: models.OrgCore},
+		{Key: "status", Value: models.StatusActive},
+	}
+	opts := options.Find().
+		SetSort(bson.D{{Key: "importance", Value: -1}, {Key: "updated_at", Value: -1}}).
+		SetLimit(int64(limit))
+
+	cur, err := d.col().Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("get core memories: %w", err)
+	}
+	defer cur.Close(ctx)
+
+	var results []models.Memory
+	if err := cur.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("decode memories: %w", err)
+	}
+	return results, nil
+}

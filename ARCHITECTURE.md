@@ -50,6 +50,15 @@ Two collections: `memories` and `tokens`.
 | `status`, `source` | `active`; `manual` |
 | `created_at`, `updated_at` | timestamps |
 
+### Core namespace (`org = "core"`)
+
+`core` is a reserved, cross-org "personality" namespace separate from the three
+work orgs. It holds foundational agent behavior (preferences, conventions,
+rules) that every workstation shares. It is **readable by any recognized token**
+and **writable only by a token explicitly granted `core`** (e.g. a
+`MEMORY_TOKENS` line `<token>:personal,core`). Work orgs stay isolated; core
+carries no secrets. Populated by the local `/reflect` agent skill.
+
 ## API surface (cmd/api/main.go)
 
 Plain `net/http` mux, port 8080, JSON logging via slog, graceful shutdown on SIGINT/SIGTERM.
@@ -74,6 +83,7 @@ Bearer resolution order in `Authorizer`: admin token → env tokens → DB token
 - `MEMORY_TOKENS` env from k8s secret. One line per token: `token:org1,org2`. `#` lines are comments — used to label which machine owns each token.
 - DB tokens: incoming bearer is SHA-256 hashed and looked up in the `tokens` collection (`revoked_at` must be unset). Created/revoked via admin API or web UI — no rollout restart needed.
 - Request flow: extract `Authorization: Bearer <token>` → resolve orgs → reject 401 (no token) / 403 (token not scoped to requested org).
+- Core reads: `CanReadOrg` allows the `core` namespace for **any recognized token** (`Recognized`), so every machine pulls shared personality; writing to `core` still requires an explicit grant via `CanAccessOrg`.
 - Env path: one token per machine; revoke = delete its line + rollout restart. DB path: revoke instantly via UI.
 
 ## Web UI (internal/web)
@@ -87,10 +97,14 @@ Server-rendered admin console at `/ui`, embedded in the same binary (html/templa
 
 ## Context generation (internal/contextgen)
 
-`GET /v1/context` builds five markdown files from memories, grouped by type:
+`GET /v1/context` builds six markdown files. `docs/ai/core.md` always comes
+first, drawn from the shared `core` namespace (all types, importance first)
+regardless of the requested org, so every `sync` pulls shared personality. The
+rest are grouped by type within the requested org:
 
 | File | Types | Limit |
 |---|---|---|
+| `docs/ai/core.md` | all (from `org=core`) | 100 |
 | `docs/ai/current-state.md` | note, task, session_summary, preference | 15 |
 | `docs/ai/decisions.md` | decision | 50 |
 | `docs/ai/architecture.md` | architecture, runbook | 30 |

@@ -25,6 +25,8 @@ type fileSpec struct {
 	limit int
 }
 
+const coreLimit = 100
+
 var contextFiles = []fileSpec{
 	{
 		path:  "docs/ai/current-state.md",
@@ -60,6 +62,16 @@ var contextFiles = []fileSpec{
 
 func (g *Generator) Generate(ctx context.Context, org, project, repo string) ([]models.ContextFile, error) {
 	var result []models.ContextFile
+
+	core, err := g.db.GetCoreMemories(ctx, coreLimit)
+	if err != nil {
+		return nil, fmt.Errorf("generate core: %w", err)
+	}
+	result = append(result, models.ContextFile{
+		Path:    "docs/ai/core.md",
+		Content: renderMarkdown("Core Memory (Agent Personality)", models.OrgCore, "", "", core),
+	})
+
 	for _, spec := range contextFiles {
 		var memories []models.Memory
 		for _, t := range spec.types {

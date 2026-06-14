@@ -18,6 +18,10 @@ const (
 	ScopeRepo    = "repo"
 	ScopeSession = "session"
 
+	// OrgCore is the shared cross-org "personality" namespace. Readable by any
+	// recognized token; writable only by tokens explicitly granted "core".
+	OrgCore = "core"
+
 	TypeDecision       = "decision"
 	TypeSessionSummary = "session_summary"
 	TypeArchitecture   = "architecture"
@@ -42,6 +46,12 @@ var ValidOrgs = map[string]bool{
 	"arrive":      true,
 	"logicbroker": true,
 	"personal":    true,
+}
+
+// IsWritableOrg reports whether a memory may be created under org. The three
+// work orgs stay isolated; OrgCore is the shared, cross-org personality layer.
+func IsWritableOrg(org string) bool {
+	return ValidOrgs[org] || org == OrgCore
 }
 
 type Memory struct {

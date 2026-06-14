@@ -15,7 +15,7 @@ Full system explanation: `ARCHITECTURE.md` (components, data model, auth, flows,
 
 ```
 cmd/api/     → HTTP server (port 8080): /v1 API + /ui admin console
-cmd/memory/  → CLI (save/search/sync/flush/status)
+cmd/memory/  → CLI (add/import/search/sync/flush/status)
 internal/
   auth/       Authorizer: admin token → env tokens → DB tokens (SHA-256 lookup)
   config/     API env config + workstation/repo YAML config
@@ -46,6 +46,16 @@ deploy/k8s/  namespace, secret, mongodb StatefulSet, memory-api Deployment, HTTP
 ## Orgs
 
 Three isolated orgs: `arrive`, `logicbroker`, `personal`. Every memory, every query, every token must include org. Never mix.
+
+## Core namespace (shared personality)
+
+`org = "core"` is a reserved cross-org namespace for foundational agent "personality" (preferences, conventions, rules) that every workstation shares. Readable by any recognized token; writable only by a token granted `core` (`MEMORY_TOKENS` line `<token>:personal,core`). Never put org secrets or machine-specific paths in core.
+
+- Write path: the local `/reflect` OpenCode skill (`~/.config/opencode/skill/reflect/SKILL.md`) mines recent sessions and writes universal signals via `save_memory core=true`. Cursor: `~/.config/opencode/state/reflect-cursor.json`.
+- Read path: `GET /v1/context` always emits `docs/ai/core.md` from `org=core` (any requested org), so `memory sync` / `sync_memory` pull it everywhere.
+- MCP: `save_memory` / `search_memory` accept `core: true` to target the namespace.
+- Go seams: `models.OrgCore` + `models.IsWritableOrg` (create), `Authorizer.CanReadOrg` + `Authorizer.Recognized` (core readable by any known token), `db.GetCoreMemories`, `contextgen` core.md. `core` is NOT in `models.ValidOrgs`.
+- Enable writes: grant `core` to the home-mac token in `memory-api-secret`, then `kubectl -n agent-memory rollout restart deploy/memory-api`. Reads need no change.
 
 ## Token format
 
@@ -93,7 +103,7 @@ Repo config: `.agent-memory.yaml`
 ## OpenCode plugin
 
 Install: `npm install -g github:rramirz/opencode-agent-memory`
-Tools: `save_memory`, `search_memory`, `sync_memory` — all manual, all fail-open.
+Tools: `save_memory`, `search_memory` (both accept `core: true` to target the shared core namespace), `sync_memory` — all manual, all fail-open.
 
 ## Safety
 

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -28,6 +29,7 @@ func main() {
 	root.AddCommand(
 		newInitCmd(),
 		newAddCmd(),
+		newImportCmd(),
 		newSearchCmd(),
 		newSyncCmd(),
 		newFlushCmd(),
@@ -392,4 +394,399 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+func newImportCmd() *cobra.Command {
+	var dir string
+	var files []string
+	var org, scope, defaultType string
+	var dryRun bool
+	var skipSections []string
+	var minBody int
+
+	cmd := &cobra.Command{
+		Use:   "import",
+		Short: "Bulk-import local markdown memory files (dreams/notes) into the service",
+		Long: "Parses OpenCode memory markdown (notes.md, dreams/core.md, dreams/local.md)\n" +
+			"into individual memories and POSTs them. Records are tagged with this\n" +
+			"workstation; org defaults to the workstation's default_org. Use --dry-run\n" +
+			"to preview without writing.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			wsCfg, token, apiURL, err := loadWorkstationCtx()
+			if err != nil {
+				return err
+			}
+			if org == "" {
+				org = wsCfg.DefaultOrg
+			}
+			if org == "" {
+				return fmt.Errorf("no org: pass --org or set default_org in workstation config")
+			}
+			if !models.ValidOrgs[org] {
+				return fmt.Errorf("invalid org %q (personal|arrive|logicbroker)", org)
+			}
+			if !wsCfg.CanAccessOrg(org) {
+				return fmt.Errorf("workstation not allowed to access org %q", org)
+			}
+
+			targets := files
+			if len(targets) == 0 {
+				if dir == "" {
+					home, _ := os.UserHomeDir()
+					dir = filepath.Join(home, ".config", "opencode", "context")
+				}
+				for _, rel := range []string{"notes.md", "dreams/core.md", "dreams/local.md"} {
+					p := filepath.Join(dir, rel)
+					if _, statErr := os.Stat(p); statErr == nil {
+						targets = append(targets, p)
+					}
+				}
+			}
+			if len(targets) == 0 {
+				return fmt.Errorf("no input files found (looked in %s)", dir)
+			}
+
+			skip := map[string]bool{}
+			for _, s := range skipSections {
+				skip[strings.ToLower(strings.TrimSpace(s))] = true
+			}
+
+			var reqs []models.CreateMemoryRequest
+			for _, f := range targets {
+				entries, perr := parseMemoryFile(f, skip, minBody)
+				if perr != nil {
+					fmt.Fprintf(os.Stderr, "skip %s: %v\n", f, perr)
+					continue
+				}
+				stem := strings.TrimSuffix(filepath.Base(f), ".md")
+				for _, e := range entries {
+					typ := classifyType(e.section, e.title, e.body, defaultType)
+					reqs = append(reqs, models.CreateMemoryRequest{
+						Org:         org,
+						Workstation: wsCfg.Workstation,
+						Scope:       scope,
+						Type:        typ,
+						Title:       e.title,
+						Body:        e.body,
+						Tags:        dedupeTags("imported", wsCfg.Workstation, stem, slug(e.section)),
+						Importance:  importanceFor(typ),
+						Source:      models.SourceImport,
+					})
+				}
+			}
+
+			if len(reqs) == 0 {
+				fmt.Println("nothing to import")
+				return nil
+			}
+
+			if dryRun {
+				tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+				fmt.Fprintln(tw, "#\tTYPE\tIMP\tORG\tWORKSTATION\tTITLE")
+				for i, r := range reqs {
+					fmt.Fprintf(tw, "%d\t%s\t%d\t%s\t%s\t%s\n", i+1, r.Type, r.Importance, r.Org, r.Workstation, truncate(r.Title, 64))
+				}
+				tw.Flush()
+				fmt.Printf("\n[dry-run] %d memories would be imported from %d file(s)\n", len(reqs), len(targets))
+				return nil
+			}
+
+			created, queued, failed := 0, 0, 0
+			for _, r := range reqs {
+				if perr := postMemory(apiURL, token, r); perr != nil {
+					if werr := outbox.Write(r); werr != nil {
+						fmt.Fprintf(os.Stderr, "FAILED %q: post %v; outbox %v\n", r.Title, perr, werr)
+						failed++
+						continue
+					}
+					queued++
+					continue
+				}
+				created++
+			}
+			fmt.Printf("imported: %d created, %d queued, %d failed (org=%s, workstation=%s, files=%d)\n",
+				created, queued, failed, org, wsCfg.Workstation, len(targets))
+			if queued > 0 {
+				fmt.Println("run `memory flush` to send queued entries when the API is reachable")
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", "", "base dir to scan (default ~/.config/opencode/context)")
+	cmd.Flags().StringArrayVar(&files, "file", nil, "explicit markdown file(s) to import (repeatable; overrides --dir)")
+	cmd.Flags().StringVar(&org, "org", "", "org (default: workstation default_org)")
+	cmd.Flags().StringVar(&scope, "scope", models.ScopeGlobal, "scope")
+	cmd.Flags().StringVar(&defaultType, "default-type", models.TypeNote, "fallback type when the heuristic finds none")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "parse and print, do not write")
+	cmd.Flags().StringArrayVar(&skipSections, "skip", []string{"Mined Session IDs"}, "section titles to skip (repeatable)")
+	cmd.Flags().IntVar(&minBody, "min-body", 1, "skip entries whose trimmed body is shorter than N chars")
+	return cmd
+}
+
+type memEntry struct {
+	section string
+	title   string
+	body    string
+}
+
+var (
+	reH2       = regexp.MustCompile(`^##\s+(.+?)\s*$`)
+	reH3       = regexp.MustCompile(`^###\s+(.+?)\s*$`)
+	reTopBull  = regexp.MustCompile(`^-\s+(.*)$`)
+	reBoldLead = regexp.MustCompile("^`?\\*\\*(.+?)\\*\\*")
+	reDate     = regexp.MustCompile(`\s*_*\(*\d{4}-\d{2}-\d{2}\)*_*`)
+	reSlug     = regexp.MustCompile(`[^a-z0-9]+`)
+)
+
+func parseMemoryFile(path string, skip map[string]bool, minBody int) ([]memEntry, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(data), "\n")
+
+	type section struct {
+		title string
+		body  []string
+	}
+	var sections []section
+	cur := section{}
+	for _, ln := range lines {
+		if m := reH2.FindStringSubmatch(ln); m != nil {
+			sections = append(sections, cur)
+			cur = section{title: m[1]}
+			continue
+		}
+		cur.body = append(cur.body, ln)
+	}
+	sections = append(sections, cur)
+
+	var out []memEntry
+	for _, s := range sections {
+		title := cleanTitle(s.title)
+		if title == "" {
+			continue // preamble before first H2 (file header/comments)
+		}
+		if skip[strings.ToLower(title)] {
+			continue
+		}
+		body := strings.Join(s.body, "\n")
+		switch {
+		case containsLineMatch(s.body, reH3):
+			out = append(out, splitByH3(title, s.body, minBody)...)
+		case hasBoldLedBullet(s.body):
+			out = append(out, splitByBullet(title, s.body, minBody)...)
+		default:
+			if b := strings.TrimSpace(body); meaningfulLen(b) >= minBody {
+				out = append(out, memEntry{section: title, title: title, body: b})
+			}
+		}
+	}
+	return out, nil
+}
+
+func splitByH3(section string, body []string, minBody int) []memEntry {
+	var out []memEntry
+	var curTitle string
+	var curBody, preamble []string
+	seen := false
+	flush := func() {
+		b := strings.TrimSpace(strings.Join(curBody, "\n"))
+		if curTitle != "" && meaningfulLen(b) >= minBody {
+			out = append(out, memEntry{section: section, title: cleanTitle(curTitle), body: b})
+		}
+		curBody = nil
+	}
+	for _, ln := range body {
+		if m := reH3.FindStringSubmatch(ln); m != nil {
+			if !seen {
+				if pre := strings.TrimSpace(strings.Join(preamble, "\n")); meaningfulLen(pre) >= minBody {
+					out = append(out, memEntry{section: section, title: section, body: pre})
+				}
+				seen = true
+			} else {
+				flush()
+			}
+			curTitle = m[1]
+			continue
+		}
+		if seen {
+			curBody = append(curBody, ln)
+		} else {
+			preamble = append(preamble, ln)
+		}
+	}
+	if seen {
+		flush()
+	}
+	return out
+}
+
+func splitByBullet(section string, body []string, minBody int) []memEntry {
+	var out []memEntry
+	var cur, preamble []string
+	started := false
+	flush := func() {
+		if len(cur) == 0 {
+			return
+		}
+		b := strings.TrimSpace(strings.Join(cur, "\n"))
+		title := bulletTitle(cur[0])
+		if title == "" {
+			title = cleanTitle(truncate(b, 60))
+		}
+		if title == "" {
+			title = section
+		}
+		if meaningfulLen(b) >= minBody {
+			out = append(out, memEntry{section: section, title: title, body: b})
+		}
+		cur = nil
+	}
+	for _, ln := range body {
+		if reTopBull.MatchString(ln) {
+			if !started {
+				if pre := strings.TrimSpace(strings.Join(preamble, "\n")); meaningfulLen(pre) >= minBody {
+					out = append(out, memEntry{section: section, title: section, body: pre})
+				}
+				started = true
+			} else {
+				flush()
+			}
+			cur = []string{ln}
+			continue
+		}
+		if started {
+			cur = append(cur, ln)
+		} else {
+			preamble = append(preamble, ln)
+		}
+	}
+	flush()
+	return out
+}
+
+func bulletTitle(line string) string {
+	content := line
+	if m := reTopBull.FindStringSubmatch(line); m != nil {
+		content = m[1]
+	}
+	content = strings.TrimSpace(content)
+	if bm := reBoldLead.FindStringSubmatch(content); bm != nil {
+		if t := cleanTitle(bm[1]); t != "" {
+			return t
+		}
+	}
+	c := strings.ReplaceAll(strings.ReplaceAll(content, "`", ""), "*", "")
+	if i := strings.IndexAny(c, ":."); i > 0 && i < 70 {
+		c = c[:i]
+	}
+	return cleanTitle(truncate(c, 70))
+}
+
+func cleanTitle(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, "**", "")
+	s = strings.ReplaceAll(s, "`", "")
+	s = reDate.ReplaceAllString(s, "")
+	s = strings.Trim(strings.TrimSpace(s), "—-:* ")
+	return strings.TrimSpace(s)
+}
+
+func meaningfulLen(s string) int {
+	r := strings.NewReplacer("-", "", "*", "", "`", "", "#", "", ">", "", "|", "")
+	return len(strings.TrimSpace(r.Replace(s)))
+}
+
+func containsLineMatch(lines []string, re *regexp.Regexp) bool {
+	for _, ln := range lines {
+		if re.MatchString(ln) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasBoldLedBullet(body []string) bool {
+	for _, ln := range body {
+		if m := reTopBull.FindStringSubmatch(ln); m != nil {
+			if reBoldLead.MatchString(strings.TrimSpace(m[1])) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func classifyType(section, title, body, def string) string {
+	h := strings.ToLower(section + " | " + title)
+	switch {
+	case containsAny(h, "pitfall", "gotcha", "known issue", "known-issue", "bug", "fails", "broken"):
+		return models.TypeKnownIssue
+	case containsAny(h, "preference", "prefer", "working preference"):
+		return models.TypePreference
+	case containsAny(h, "decision", "decided", "pivot", "non-goal"):
+		return models.TypeDecision
+	case containsAny(h, "architecture", "sso gate", "fleet", "topology", "data model", "design"):
+		return models.TypeArchitecture
+	case containsAny(h, "pattern", "runbook", "setup", "onboard", "deploy", "workflow", "install", "provider strategy"):
+		return models.TypeRunbook
+	case containsAny(h, "skill"):
+		return models.TypeSkill
+	}
+	if def == "" {
+		return models.TypeNote
+	}
+	return def
+}
+
+func importanceFor(t string) int {
+	switch t {
+	case models.TypePreference:
+		return 8
+	case models.TypeDecision, models.TypeKnownIssue:
+		return 7
+	case models.TypeArchitecture, models.TypeRunbook:
+		return 6
+	default:
+		return 5
+	}
+}
+
+func containsAny(s string, subs ...string) bool {
+	for _, x := range subs {
+		if strings.Contains(s, x) {
+			return true
+		}
+	}
+	return false
+}
+
+func truncate(s string, n int) string {
+	s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n-1]) + "…"
+}
+
+func slug(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = reSlug.ReplaceAllString(s, "-")
+	return strings.Trim(s, "-")
+}
+
+func dedupeTags(in ...string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, t := range in {
+		t = strings.TrimSpace(t)
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, t)
+	}
+	return out
 }

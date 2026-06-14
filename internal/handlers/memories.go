@@ -55,7 +55,7 @@ func (h *MemoryHandlers) CreateMemory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "body is required")
 		return
 	}
-	if !models.ValidOrgs[req.Org] {
+	if !models.IsWritableOrg(req.Org) {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid org: %s", req.Org))
 		return
 	}
@@ -114,7 +114,7 @@ func (h *MemoryHandlers) SearchMemories(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "org is required")
 		return
 	}
-	if !h.auth.CanAccessOrg(r.Context(), token, org) {
+	if !h.auth.CanReadOrg(r.Context(), token, org) {
 		writeError(w, http.StatusForbidden, "token not authorized for this org")
 		return
 	}
